@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
         token_types: &[TokenType],
     ) -> Result<Expr, String>
     where
-        for<'b> F: FnMut(&'b mut Parser<'a>) -> Result<Expr, String>
+        F: FnMut(&mut Parser<'a>) -> Result<Expr, String>,
     {
         let mut expr = subexpression(self)?;
 
