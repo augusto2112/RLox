@@ -1,5 +1,5 @@
 [package]
-name = "test-project"
+name = "rlox"
 version = "0.1.0"
 authors = ["Augusto Noronha <augusto2112@me.com>"]
 edition = "2018"

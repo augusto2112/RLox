@@ -7,11 +7,11 @@ pub struct Scanner {
     start: usize,
     current: usize,
     line: usize,
-    errors: Vec<ScannerError>,
+    errors: Vec<String>,
 }
 
 impl Scanner {
-    pub fn scan(source: &str) -> Result<Vec<Token>, Vec<ScannerError>> {
+    pub fn scan(source: &str) -> Result<Vec<Token>, Vec<String>> {
         let mut scanner = Scanner::new(source);
         scanner.scan_tokens();
         if scanner.errors.is_empty() {
@@ -91,10 +91,7 @@ impl Scanner {
                 } else if c.is_ascii_alphabetic() || c == '_' {
                     self.identifier()
                 } else {
-                    self.errors.push(ScannerError {
-                        line: self.line,
-                        error_type: ScannerErrorType::UnexpectedCharacter,
-                    });
+                    self.errors.push(format!("unexpected character at line {}", self.line));
                 }
             }
         }
@@ -104,7 +101,7 @@ impl Scanner {
         if self.is_at_end() {
             return false;
         }
-        if self.current_char() != expected {
+        if self.peek() != expected {
             return false;
         }
 
@@ -151,10 +148,7 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            self.errors.push(ScannerError {
-                line: self.line,
-                error_type: ScannerErrorType::UnterminatedString,
-            });
+            self.errors.push(format!("Error: unterminated string at line {}", self.line));
             return;
         }
 
@@ -223,33 +217,3 @@ impl Scanner {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ScannerError {
-    line: usize,
-    error_type: ScannerErrorType,
-}
-
-#[derive(Debug, Clone)]
-enum ScannerErrorType {
-    UnexpectedCharacter,
-    UnterminatedString,
-}
-
-impl std::fmt::Display for ScannerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &self.error_type {
-            ScannerErrorType::UnterminatedString => {
-                write!(f, "unterminated string at line {}", &self.line)
-            }
-            ScannerErrorType::UnexpectedCharacter => {
-                write!(f, "unexpected character at line {}", &self.line)
-            }
-        }
-    }
-}
-
-impl std::error::Error for ScannerError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}

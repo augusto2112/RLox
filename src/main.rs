@@ -1,6 +1,10 @@
 mod scanner;
 mod token;
+mod parser;
+mod expression;
+
 use scanner::Scanner;
+use parser::Parser;
 use std::io::Write;
 
 fn main() {
@@ -36,20 +40,28 @@ fn run_prompt() {
 
 fn run(source: &str) {
     println!("{}", source);
-    match Scanner::scan(source) {
-        Ok(tokens) => {
-            for token in tokens {
-                println!("{:?}", token)
-            }
-        }
-        Err(errors) => {
-            for error in errors {
-                report_error(&error)
+    let expr = Scanner::scan(source).and_then(|tokens| {
+        Parser::parse(&tokens)
+    });
+    match expr {
+        Ok(expr) => println!("{:?}", expr),
+        Err(strings) => {
+            for string in strings {
+                println!("Error: {}", string)
             }
         }
     }
+    // match Scanner::scan(source) {
+    //     Ok(tokens) => {
+    //         for token in tokens {
+    //             println!("{:?}", token)
+    //         }
+    //     }
+    //     Err(errors) => {
+    //         for error in errors {
+    //             report_error(&error)
+    //         }
+    //     }
+    // }
 }
 
-fn report_error(error: &dyn std::error::Error) {
-    println!("Error: {}", error)
-}
