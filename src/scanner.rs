@@ -158,7 +158,7 @@ impl Scanner {
             .iter()
             .cloned()
             .collect::<String>();
-        self.add_token(TokenType::String_(value));
+        self.add_token(TokenType::String(value));
     }
 
     fn number(&mut self) {

@@ -1,4 +1,5 @@
 use crate::expression::Expr;
+use crate::statement::Stmt;
 use crate::token::Token;
 use crate::token::TokenType;
 use std::mem::discriminant;
@@ -20,17 +21,41 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse(tokens: &[Token]) -> Result<Expr, Vec<String>> {
+    pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Vec<String>> {
         let mut parser = Parser::new(tokens);
-        parser.expression().map_err(|error| vec![error])
+        parser.parse_statements().map_err(|err| vec![err])
+    }
+
+    pub fn parse_statements(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut statements: Vec<Stmt> = vec![];
+        while !self.is_at_end() {
+            statements.push(self.declaration()?);
+        }
+        Ok(statements)
     }
 
     fn new(tokens: &[Token]) -> Parser {
         Parser { tokens, current: 0 }
     }
+}
 
+// Expressions
+impl<'a> Parser<'a> {
     fn expression(&mut self) -> Result<Expr, String> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr, String> {
+        let expr = self.equality()?;
+        if self.match_type(&[TokenType::Equal]) {
+            let equals = self.previous().clone();
+            let value = self.assignment()?;
+            if let Expr::Variable(token) = expr {
+                return Ok(Expr::Assignment(token, Box::from(value)));
+            }
+            return Err(self.format_error(&equals, "Invalid assignment target."));
+        }
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr, String> {
@@ -81,10 +106,10 @@ impl<'a> Parser<'a> {
             return Ok(Expr::Nil);
         }
 
-        if self.match_type(&[TokenType::Number(0.0), TokenType::String_(String::from(""))]) {
+        if self.match_type(&[TokenType::Number(0.0), TokenType::String(String::from(""))]) {
             return match &self.previous().token_type {
                 TokenType::Number(num) => Ok(Expr::Number(*num)),
-                TokenType::String_(string) => Ok(Expr::String_(string.clone())),
+                TokenType::String(string) => Ok(Expr::String(string.clone())),
                 _ => panic!(),
             };
         }
@@ -93,6 +118,10 @@ impl<'a> Parser<'a> {
             let expr = self.expression()?;
             self.consume(&TokenType::RightParen, "Expected ')' after expression.")?;
             return Ok(Expr::Grouping(Box::from(expr)));
+        }
+
+        if self.match_type(&[TokenType::Identifier("".to_string())]) {
+            return Ok(Expr::Variable(self.previous().clone()));
         }
 
         Err(self.format_error(self.peek(), "Expected expression."))
@@ -162,8 +191,66 @@ impl<'a> Parser<'a> {
 
     fn format_error(&self, token: &Token, message: &str) -> String {
         match &token.token_type {
-            TokenType::EOF => format!("Unclosed paranthesis at line {}. {} ", token.line, message),
+            TokenType::EOF => format!("Unexpected EOF at line {}. {} ", token.line, message),
             _ => format!("{:?} at line {}. {}", token.token_type, token.line, message),
         }
+    }
+}
+
+// statements
+impl<'a> Parser<'a> {
+    fn declaration(&mut self) -> Result<Stmt, String> {
+        if self.match_type(&[TokenType::Var]) {
+            return self.var_declaration();
+        }
+        self.statement()
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, String> {
+        let name = self.consume(
+            &TokenType::Identifier("".to_string()),
+            "Expected variable name",
+        )?;
+        let initializer = if self.match_type(&[TokenType::Equal]) {
+            Some(self.expression()?)
+        } else {
+            Option::None
+        };
+        self.consume(
+            &TokenType::Semicolon,
+            "Expected ';' after variable declaration",
+        )?;
+        Ok(Stmt::Var(name, initializer))
+    }
+
+    fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_type(&[TokenType::Print]) {
+            return self.print_statement()
+        }
+        if self.match_type(&[TokenType::LeftBrace]) {
+            return self.block().map(Stmt::Block)
+        }
+        self.expression_statement()
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, String> {
+        let value = self.expression()?;
+        self.consume(&TokenType::Semicolon, "Expected ';' after value.")?;
+        Ok(Stmt::Print(value))
+    }
+
+    fn block(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut statements: Vec<Stmt> = vec![];
+        while !self.check(&TokenType::RightBrace) {
+            statements.push(self.declaration()?);
+        }
+        self.consume(&TokenType::RightBrace, "Expected '}' afted block.")?;
+        Ok(statements)
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, String> {
+        let expression = self.expression()?;
+        self.consume(&TokenType::Semicolon, "Expected ';' after expression.")?;
+        Ok(Stmt::Expr(expression))
     }
 }
