@@ -4,7 +4,6 @@ use crate::value::LoxValue;
 use std::collections::HashMap;
 use std::mem::discriminant;
 
-
 #[derive(Debug, Clone)]
 pub struct Environment {
     enclosed: Option<Box<Environment>>,
@@ -19,23 +18,23 @@ impl Environment {
         }
     }
 
-    pub fn add_subenvironment(&mut self) {
+    pub fn add_sub_environment(&mut self) {
         if let Some(ref mut enclosed) = self.enclosed {
-            enclosed.add_subenvironment()
+            enclosed.add_sub_environment()
         } else {
             self.enclosed = Option::from(Box::from(Environment::new()))
         }
     }
 
-    fn contains_subenvironmnet(&self) -> bool {
+    fn contains_sub_environmnet(&self) -> bool {
         discriminant(&self.enclosed) != discriminant(&Option::None)
     }
 
-    pub fn remove_subenvironment(&mut self) {
+    pub fn remove_sub_environment(&mut self) {
         if let Some(ref mut enclosed) = self.enclosed {
-            if enclosed.contains_subenvironmnet() {
-                enclosed.remove_subenvironment();
-                return 
+            if enclosed.contains_sub_environmnet() {
+                enclosed.remove_sub_environment();
+                return;
             }
         }
         self.enclosed = Option::None
@@ -53,24 +52,23 @@ impl Environment {
         if let Some(ref mut enclosed) = self.enclosed {
             let result = enclosed.assign(name, value);
             if result.is_ok() {
-                return result
+                return result;
             }
-        }       
+        }
 
         if self.values.contains_key(name) {
             self.values.insert(name.to_string(), value.clone());
-            return Ok(())
+            return Ok(());
         }
 
-        Err(format!("Undefined variable '{}'.", name))        
+        Err(format!("Undefined variable '{}'.", name))
     }
-
 
     pub fn get(&self, token: &Token) -> Result<LoxValue, String> {
         if let Some(enclosed) = &self.enclosed {
             let result = enclosed.get(token);
             if result.is_ok() {
-                return result
+                return result;
             }
         }
 
@@ -78,10 +76,10 @@ impl Environment {
             self.values
                 .get(identifier)
                 .ok_or({ format!("Undefined variable: {}", identifier) })
-                .map(|value| value.clone())
+                .map(std::clone::Clone::clone)
         } else if let Some(enclosed) = &self.enclosed {
             enclosed.get(token)
-        }else {
+        } else {
             panic!("Compiler bug: unexpected token: {:?}", token);
         }
     }

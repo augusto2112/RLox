@@ -4,17 +4,6 @@ use crate::token::Token;
 use crate::token::TokenType;
 use std::mem::discriminant;
 
-// Grammar:
-// expression     → equality ;
-// equality       → comparison ( ( "!=" | "==" ) comparison )* ;
-// comparison     → addition ( ( ">" | ">=" | "<" | "<=" ) addition )* ;
-// addition       → multiplication ( ( "-" | "+" ) multiplication )* ;
-// multiplication → unary ( ( "/" | "*" ) unary )* ;
-// unary          → ( "!" | "-" ) unary
-//                | primary ;
-// primary        → NUMBER | STRING | "false" | "true" | "nil"
-//                | "(" expression ")" ;
-
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
@@ -46,7 +35,7 @@ impl<'a> Parser<'a> {
     }
 
     fn assignment(&mut self) -> Result<Expr, String> {
-        let expr = self.equality()?;
+        let expr = self.logic_or()?;
         if self.match_type(&[TokenType::Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
@@ -54,6 +43,28 @@ impl<'a> Parser<'a> {
                 return Ok(Expr::Assignment(token, Box::from(value)));
             }
             return Err(self.format_error(&equals, "Invalid assignment target."));
+        }
+        Ok(expr)
+    }
+
+    fn logic_or(&mut self) -> Result<Expr, String> {
+        let mut expr = self.logic_and()?;
+
+        while self.match_type(&[TokenType::Or]) {
+            let operator = self.previous().clone();
+            let right = self.logic_and()?;
+            expr = Expr::Logical(Box::from(expr), operator, Box::from(right));
+        }
+        Ok(expr)
+    }
+
+    fn logic_and(&mut self) -> Result<Expr, String> {
+        let mut expr = self.equality()?;
+
+        while self.match_type(&[TokenType::And]) {
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+            expr = Expr::Logical(Box::from(expr), operator, Box::from(right));
         }
         Ok(expr)
     }
@@ -132,8 +143,8 @@ impl<'a> Parser<'a> {
         mut subexpression: F,
         token_types: &[TokenType],
     ) -> Result<Expr, String>
-    where
-        F: FnMut(&mut Parser<'a>) -> Result<Expr, String>,
+        where
+            F: FnMut(&mut Parser<'a>) -> Result<Expr, String>,
     {
         let mut expr = subexpression(self)?;
 
@@ -190,9 +201,10 @@ impl<'a> Parser<'a> {
     }
 
     fn format_error(&self, token: &Token, message: &str) -> String {
-        match &token.token_type {
-            TokenType::EOF => format!("Unexpected EOF at line {}. {} ", token.line, message),
-            _ => format!("{:?} at line {}. {}", token.token_type, token.line, message),
+        if let TokenType::EOF = &token.token_type {
+            format!("Unexpected EOF at line {}. {} ", token.line, message)
+        } else {
+            format!("{:?} at line {}. {}", token.token_type, token.line, message)
         }
     }
 }
@@ -224,13 +236,37 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_type(&[TokenType::If]) {
+            return self.if_statement();
+        }
         if self.match_type(&[TokenType::Print]) {
-            return self.print_statement()
+            return self.print_statement();
         }
         if self.match_type(&[TokenType::LeftBrace]) {
-            return self.block().map(Stmt::Block)
+            return self.block().map(Stmt::Block);
+        }
+        if self.match_type(&[TokenType::While]) {
+            return self.while_statement();
+        }
+        if self.match_type(&[TokenType::For]) {
+            return self.for_statement();
         }
         self.expression_statement()
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(&TokenType::LeftParen, "Expected '(' after 'if'.")?;
+        let condition = self.expression()?;
+        self.consume(&TokenType::RightParen, "Expected ')' after if condition.")?;
+
+        let then_branch = Box::from(self.statement()?);
+        let else_branch = if self.match_type(&[TokenType::Else]) {
+            Option::from(Box::from(self.statement()?))
+        } else {
+            Option::None
+        };
+
+        Ok(Stmt::If(condition, then_branch, else_branch))
     }
 
     fn print_statement(&mut self) -> Result<Stmt, String> {
@@ -248,6 +284,52 @@ impl<'a> Parser<'a> {
         Ok(statements)
     }
 
+    fn while_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(&TokenType::LeftParen, "Expected '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(
+            &TokenType::RightParen,
+            "Expected ')' after while condition.",
+        )?;
+
+        let body = Box::from(self.statement()?);
+        Ok(Stmt::While(condition, body))
+    }
+
+    fn for_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(&TokenType::LeftParen, "Expected '(' after 'for'.")?;
+
+        let mut statements: Vec<Stmt> = vec![];
+        if !self.match_type(&[TokenType::Semicolon]) {
+            if self.match_type(&[TokenType::Var]) {
+                statements.push(self.var_declaration()?);
+            } else {
+                statements.push(self.expression_statement()?);
+            }
+        }
+
+        let condition = if self.check(&TokenType::Semicolon) {
+            Expr::True
+        } else {
+            self.expression()?
+        };
+        self.consume(&TokenType::Semicolon, "Expected ';' after loop condition.")?;
+
+        let increment = if self.check(&TokenType::RightParen) {
+            Option::None
+        } else {
+            Option::from(Stmt::Expr(self.expression()?))
+        };
+        self.consume(&TokenType::RightParen, "Expected ')' after 'for'.")?;
+
+        let mut body = self.statement()?;
+        if let Some(increment) = increment {
+            body = Stmt::Block(vec![body, increment]);
+        }
+        statements.push(Stmt::While(condition, Box::from(body)));
+
+        Ok(Stmt::Block(statements))
+    }
     fn expression_statement(&mut self) -> Result<Stmt, String> {
         let expression = self.expression()?;
         self.consume(&TokenType::Semicolon, "Expected ';' after expression.")?;

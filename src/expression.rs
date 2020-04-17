@@ -1,4 +1,4 @@
-use crate::token::Token; 
+use crate::token::Token;
 
 #[derive(Debug)]
 pub enum Expr {
@@ -12,4 +12,5 @@ pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Variable(Token),
     Assignment(Token, Box<Expr>),
+    Logical(Box<Expr>, Token, Box<Expr>),
 }

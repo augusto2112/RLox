@@ -1,4 +1,4 @@
-use crate::enviroment::Environment;
+use crate::environment::Environment;
 use crate::expression::Expr;
 use crate::statement::Stmt;
 use crate::token::Token;
@@ -44,9 +44,23 @@ impl Interpreter {
                     self.enviroment.define(name, &LoxValue::Nil);
                 }
                 Ok(())
-            },
+            }
             Stmt::Block(statements) => self.execute_block(&statements),
-            statement => panic!("Interpreter bug. Unexpected statement: {:?}", statement)
+            Stmt::If(condition, then_block, else_block) => {
+                if self.interpret_expression(condition)?.is_truthy() {
+                    self.interpret_statement(then_block)?;
+                } else if let Some(else_block) = else_block {
+                    self.interpret_statement(else_block)?;
+                }
+                Ok(())
+            }
+            Stmt::While(condition, body) => {
+                while self.interpret_expression(condition)?.is_truthy() {
+                    self.interpret_statement(body)?;
+                }
+                Ok(())
+            }
+            statement => panic!("Interpreter bug. Unexpected statement: {:?}", statement),
         }
     }
 
@@ -125,16 +139,50 @@ impl Interpreter {
                     )),
                     (left, op, right) => panic!("Interpreter bug: Unexpected match of left expression: {:?}, operation: {:?}, right expression: {:?}", left, op, right),
                 }
-            },
+            }
             Expr::Variable(token) => self.enviroment.get(&token),
-            Expr::Assignment(Token {
-                token_type: TokenType::Identifier(name),
-                ..
-            }, expression) => {
+            Expr::Assignment(
+                Token {
+                    token_type: TokenType::Identifier(name),
+                    ..
+                },
+                expression,
+            ) => {
                 let value = self.interpret_expression(expression)?;
                 self.enviroment.assign(name, &value)?;
                 Ok(value)
             }
+            Expr::Logical(
+                left,
+                Token {
+                    token_type: TokenType::Or,
+                    ..
+                },
+                right,
+            ) => {
+                let left = self.interpret_expression(left)?;
+                if left.is_truthy() {
+                    Ok(left)
+                } else {
+                    self.interpret_expression(right)
+                }
+            }
+            Expr::Logical(
+                left,
+                Token {
+                    token_type: TokenType::And,
+                    ..
+                },
+                right,
+            ) => {
+                let left = self.interpret_expression(left)?;
+                if left.is_truthy() {
+                    self.interpret_expression(right)
+                } else {
+                    Ok(left)
+                }
+            }
+
             expression => panic!("Interpreter bug: unexpected expression: {:?}", expression),
         }
     }
@@ -147,8 +195,16 @@ impl Interpreter {
                 self.enviroment.remove_subenvironment();
                 return result
             }
-        }   
-        self.enviroment.remove_subenvironment(); 
+        }
+        self.enviroment.remove_subenvironment();
         Ok(())
     }
 }
+
+
+
+
+
+
+
+

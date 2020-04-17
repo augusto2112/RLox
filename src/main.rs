@@ -1,32 +1,35 @@
-mod scanner;
-mod token;
-mod parser;
-mod expression;
-mod statement;
-mod interpreter;
-mod value;
-mod enviroment;
+#![warn(clippy::all)]
+#![warn(clippy::pedantic)]
 
-use scanner::Scanner;
-use parser::Parser;
+mod environment;
+mod expression;
+mod interpreter;
+mod parser;
+mod scanner;
+mod statement;
+mod token;
+mod value;
+
 use interpreter::Interpreter;
+use parser::Parser;
+use scanner::Scanner;
 use std::io::Write;
 
-
 struct Lox {
-    interpreter: Interpreter
+    interpreter: Interpreter,
 }
 
 impl Lox {
     fn run_file(&mut self, path: &str) {
         println!("{}", path);
-        let contents = std::fs::read_to_string(path).expect("Something went wrong when reading file");
+        let contents =
+            std::fs::read_to_string(path).expect("Something went wrong when reading file");
         self.run(&contents);
     }
-    
-    fn run_prompt(&mut self, ) {
+
+    fn run_prompt(&mut self) {
         let mut input = String::new();
-    
+
         loop {
             print!("> ");
             std::io::stdout().flush().unwrap();
@@ -37,29 +40,29 @@ impl Lox {
             input.clear();
         }
     }
-    
-    
-    
+
     fn run(&mut self, source: &str) {
-        let result =  Scanner::scan(source).and_then(|tokens| {
-            Parser::parse(&tokens)
-        }).and_then(|statements| {
-            self.interpreter.interpret(&statements).map_err(|error| { vec![error] })
-        });
+        let result = Scanner::scan(source)
+            .and_then(|tokens| Parser::parse(&tokens))
+            .and_then(|statements| {
+                self.interpreter
+                    .interpret(&statements)
+                    .map_err(|error| vec![error])
+            });
         match result {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(strings) => {
                 for string in strings {
                     println!("Error: {}", string)
                 }
             }
         }
-    }    
+    }
 }
 
 fn main() {
     let mut lox = Lox {
-        interpreter: Interpreter::new()
+        interpreter: Interpreter::new(),
     };
 
     let args: Vec<String> = std::env::args().collect();
@@ -72,4 +75,3 @@ fn main() {
         }
     }
 }
-

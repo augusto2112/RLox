@@ -91,7 +91,8 @@ impl Scanner {
                 } else if c.is_ascii_alphabetic() || c == '_' {
                     self.identifier()
                 } else {
-                    self.errors.push(format!("unexpected character at line {}", self.line));
+                    self.errors
+                        .push(format!("unexpected character at line {}", self.line));
                 }
             }
         }
@@ -148,7 +149,8 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            self.errors.push(format!("Error: unterminated string at line {}", self.line));
+            self.errors
+                .push(format!("Error: unterminated string at line {}", self.line));
             return;
         }
 
@@ -216,4 +218,3 @@ impl Scanner {
         }
     }
 }
-
