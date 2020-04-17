@@ -15,19 +15,19 @@ use parser::Parser;
 use scanner::Scanner;
 use std::io::Write;
 
-struct Lox {
-    interpreter: Interpreter,
+struct Lox<'a> {
+    interpreter: Interpreter<'a>,
 }
 
-impl Lox {
-    fn run_file(&mut self, path: &str) {
+impl<'a> Lox<'a> {
+    fn run_file<'b: 'a>(&'b mut self, path: &str) {
         println!("{}", path);
         let contents =
             std::fs::read_to_string(path).expect("Something went wrong when reading file");
         self.run(&contents);
     }
 
-    fn run_prompt(&mut self) {
+    fn run_prompt<'b: 'a>(&'b mut self) {
         let mut input = String::new();
 
         loop {
@@ -41,7 +41,7 @@ impl Lox {
         }
     }
 
-    fn run(&mut self, source: &str) {
+    fn run<'b: 'a>(&'b mut self, source: &str) {
         let result = Scanner::scan(source)
             .and_then(|tokens| Parser::parse(&tokens))
             .and_then(|statements| {

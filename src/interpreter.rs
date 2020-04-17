@@ -5,25 +5,25 @@ use crate::token::Token;
 use crate::token::TokenType;
 use crate::value::LoxValue;
 
-pub struct Interpreter {
-    enviroment: Environment,
+pub struct Interpreter<'a> {
+    enviroment: Environment<'a>,
 }
 
-impl Interpreter {
-    pub fn new() -> Interpreter {
+impl<'a> Interpreter<'a> {
+    pub fn new() -> Interpreter<'a> {
         Interpreter {
             enviroment: Environment::new(),
         }
     }
 
-    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
+    pub fn interpret<'b: 'a>(&'b mut self, statements: &[Stmt]) -> Result<(), String> {
         for statement in statements {
             self.interpret_statement(statement)?;
         }
         Ok(())
     }
 
-    pub fn interpret_statement(&mut self, statement: &Stmt) -> Result<(), String> {
+    pub fn interpret_statement<'b: 'a>(&'b mut self, statement: &Stmt) -> Result<(), String> {
         match statement {
             Stmt::Print(expression) => {
                 let value = self.interpret_expression(expression)?;
@@ -206,16 +206,18 @@ impl Interpreter {
         }
     }
 
-    fn execute_block(&mut self, statements: &[Stmt]) -> Result<(), String> {
-        self.enviroment.add_sub_environment();
+    fn execute_block<'b: 'a>(&'b mut self, statements: &[Stmt]) -> Result<(), String> {
+        let new_environment = Environment::new_enclosed(&mut self.enviroment);
+        let mut new_interpreter = Interpreter {
+            enviroment: new_environment
+        };
+
         for statement in statements {
-            let result = self.interpret_statement(statement);
+            let result = new_interpreter.interpret_statement(statement);
             if result.is_err() {
-                self.enviroment.remove_sub_environment();
                 return result;
             }
         }
-        self.enviroment.remove_sub_environment();
         Ok(())
     }
 }
