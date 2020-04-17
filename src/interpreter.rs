@@ -92,53 +92,8 @@ impl Interpreter {
                 LoxValue::Number(number) => Ok(LoxValue::Number(-number)),
                 _ => Err("Error: operand must be a number.".to_string()),
             },
-            Expr::Binary(left, Token { token_type, line }, right) => {
-                match (self.interpret_expression(left)?, token_type, self.interpret_expression(right)?) {
-                    (LoxValue::Number(left), TokenType::Plus, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Number(left + right))
-                    },
-                    (LoxValue::String(left), TokenType::Plus, LoxValue::String(right)) => {
-                        Ok(LoxValue::String(left + &right))
-                    }
-                    (LoxValue::Number(left), TokenType::Minus, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Number(left - right))
-                    }
-                    (LoxValue::Number(left), TokenType::Slash, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Number(left / right))
-                    }
-                    (LoxValue::Number(left), TokenType::Star, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Number(left * right))
-                    }
-                    (LoxValue::Number(left), TokenType::Less, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Bool(left < right))
-                    }
-                    (LoxValue::Number(left), TokenType::LessEqual, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Bool(left <= right))
-                    }
-                    (LoxValue::Number(left), TokenType::Greater, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Bool(left > right))
-                    }
-                    (LoxValue::Number(left), TokenType::GreaterEqual, LoxValue::Number(right)) => {
-                        Ok(LoxValue::Bool(left >= right))
-                    }
-                    (left, TokenType::EqualEqual, right) => Ok(LoxValue::Bool(left == right)),
-                    (left, TokenType::BangEqual, right) => Ok(LoxValue::Bool(left != right)),
-                    (_, TokenType::Minus, _)
-                    | (_, TokenType::Star, _)
-                    | (_, TokenType::Slash, _)
-                    | (_, TokenType::Less, _)
-                    | (_, TokenType::LessEqual, _)
-                    | (_, TokenType::Greater, _)
-                    | (_, TokenType::GreaterEqual, _) => Err(format!(
-                        "Error in line: {}, operands must both be numbers.",
-                        line
-                    )),
-                    (_, TokenType::Plus, _) => Err(format!(
-                        "Error in line: {}, operands must both be numbers or strings.",
-                        line
-                    )),
-                    (left, op, right) => panic!("Interpreter bug: Unexpected match of left expression: {:?}, operation: {:?}, right expression: {:?}", left, op, right),
-                }
+            Expr::Binary(left, token, right) => {
+                self.interpret_binary_expression(left, token, right)
             }
             Expr::Variable(token) => self.enviroment.get(&token),
             Expr::Assignment(
@@ -187,24 +142,71 @@ impl Interpreter {
         }
     }
 
+    fn interpret_binary_expression(
+        &mut self,
+        left: &Box<Expr>,
+        token: &Token,
+        right: &Box<Expr>,
+    ) -> Result<LoxValue, String> {
+        let Token { token_type, line } = token;
+        match (self.interpret_expression(left)?, token_type, self.interpret_expression(right)?) {
+            (LoxValue::Number(left), TokenType::Plus, LoxValue::Number(right)) => {
+                Ok(LoxValue::Number(left + right))
+            }
+            (LoxValue::String(left), TokenType::Plus, LoxValue::String(right)) => {
+                Ok(LoxValue::String(left + &right))
+            }
+            (LoxValue::Number(left), TokenType::Minus, LoxValue::Number(right)) => {
+                Ok(LoxValue::Number(left - right))
+            }
+            (LoxValue::Number(left), TokenType::Slash, LoxValue::Number(right)) => {
+                Ok(LoxValue::Number(left / right))
+            }
+            (LoxValue::Number(left), TokenType::Star, LoxValue::Number(right)) => {
+                Ok(LoxValue::Number(left * right))
+            }
+            (LoxValue::Number(left), TokenType::Less, LoxValue::Number(right)) => {
+                Ok(LoxValue::Bool(left < right))
+            }
+            (LoxValue::Number(left), TokenType::LessEqual, LoxValue::Number(right)) => {
+                Ok(LoxValue::Bool(left <= right))
+            }
+            (LoxValue::Number(left), TokenType::Greater, LoxValue::Number(right)) => {
+                Ok(LoxValue::Bool(left > right))
+            }
+            (LoxValue::Number(left), TokenType::GreaterEqual, LoxValue::Number(right)) => {
+                Ok(LoxValue::Bool(left >= right))
+            }
+            (left, TokenType::EqualEqual, right) => Ok(LoxValue::Bool(left == right)),
+            (left, TokenType::BangEqual, right) => Ok(LoxValue::Bool(left != right)),
+            (_, TokenType::Minus, _)
+            | (_, TokenType::Star, _)
+            | (_, TokenType::Slash, _)
+            | (_, TokenType::Less, _)
+            | (_, TokenType::LessEqual, _)
+            | (_, TokenType::Greater, _)
+            | (_, TokenType::GreaterEqual, _) => Err(format!(
+                "Error in line: {}, operands must both be numbers.",
+                line
+            )),
+            (_, TokenType::Plus, _) => Err(format!(
+                "Error in line: {}, operands must both be numbers or strings.",
+                line
+            )),
+            (left, op, right) => panic!("Interpreter bug: Unexpected match of left expression: {:?}, operation: {:?}, right expression: {:?}", left, op, right),
+        }
+    }
+
     fn execute_block(&mut self, statements: &[Stmt]) -> Result<(), String> {
-        self.enviroment.add_subenvironment();
+        self.enviroment.add_sub_environment();
         for statement in statements {
             let result = self.interpret_statement(statement);
             if result.is_err() {
-                self.enviroment.remove_subenvironment();
-                return result
+                self.enviroment.remove_sub_environment();
+                return result;
             }
         }
-        self.enviroment.remove_subenvironment();
+        self.enviroment.remove_sub_environment();
         Ok(())
     }
 }
-
-
-
-
-
-
-
-
