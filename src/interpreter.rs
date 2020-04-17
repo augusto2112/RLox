@@ -15,6 +15,7 @@ impl Interpreter {
             enviroment: Environment::new(),
         }
     }
+
     pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
         for statement in statements {
             self.interpret_statement(statement)?;
@@ -136,6 +137,14 @@ impl Interpreter {
                 } else {
                     Ok(left)
                 }
+            }
+            Expr::Call(callee, paren, arguments) => {
+                let callee = self.interpret_expression(callee)?;
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.interpret_expression(argument));
+
+                Ok(LoxValue::Nil)
             }
 
             expression => panic!("Interpreter bug: unexpected expression: {:?}", expression),

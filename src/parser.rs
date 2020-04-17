@@ -2,6 +2,11 @@ use crate::expression::Expr;
 use crate::statement::Stmt;
 use crate::token::Token;
 use crate::token::TokenType;
+use crate::token::TokenType::{
+    And, Bang, BangEqual, Comma, Else, Equal, EqualEqual, False, For, Greater, GreaterEqual,
+    Identifier, If, LeftBrace, LeftParen, Less, LessEqual, Minus, Nil, Number, Or, Plus, Print,
+    RightBrace, RightParen, Semicolon, Slash, Star, True, Var, While, EOF,
+};
 use std::mem::discriminant;
 
 pub struct Parser<'a> {
@@ -36,7 +41,7 @@ impl<'a> Parser<'a> {
 
     fn assignment(&mut self) -> Result<Expr, String> {
         let expr = self.logic_or()?;
-        if self.match_type(&[TokenType::Equal]) {
+        if self.match_type(&[Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
             if let Expr::Variable(token) = expr {
@@ -50,7 +55,7 @@ impl<'a> Parser<'a> {
     fn logic_or(&mut self) -> Result<Expr, String> {
         let mut expr = self.logic_and()?;
 
-        while self.match_type(&[TokenType::Or]) {
+        while self.match_type(&[Or]) {
             let operator = self.previous().clone();
             let right = self.logic_and()?;
             expr = Expr::Logical(Box::from(expr), operator, Box::from(right));
@@ -61,7 +66,7 @@ impl<'a> Parser<'a> {
     fn logic_and(&mut self) -> Result<Expr, String> {
         let mut expr = self.equality()?;
 
-        while self.match_type(&[TokenType::And]) {
+        while self.match_type(&[And]) {
             let operator = self.previous().clone();
             let right = self.equality()?;
             expr = Expr::Logical(Box::from(expr), operator, Box::from(right));
@@ -70,68 +75,91 @@ impl<'a> Parser<'a> {
     }
 
     fn equality(&mut self) -> Result<Expr, String> {
-        self.parse_binary_expression(
-            Parser::comparison,
-            &[TokenType::EqualEqual, TokenType::BangEqual],
-        )
+        self.parse_binary_expression(Parser::comparison, &[EqualEqual, BangEqual])
     }
 
     fn comparison(&mut self) -> Result<Expr, String> {
-        self.parse_binary_expression(
-            Parser::addition,
-            &[
-                TokenType::Less,
-                TokenType::LessEqual,
-                TokenType::Greater,
-                TokenType::GreaterEqual,
-            ],
-        )
+        self.parse_binary_expression(Parser::addition, &[Less, LessEqual, Greater, GreaterEqual])
     }
 
     fn addition(&mut self) -> Result<Expr, String> {
-        self.parse_binary_expression(Parser::multiplication, &[TokenType::Plus, TokenType::Minus])
+        self.parse_binary_expression(Parser::multiplication, &[Plus, Minus])
     }
 
     fn multiplication(&mut self) -> Result<Expr, String> {
-        self.parse_binary_expression(Parser::unary, &[TokenType::Slash, TokenType::Star])
+        self.parse_binary_expression(Parser::unary, &[Slash, Star])
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
-        if self.match_type(&[TokenType::Bang, TokenType::Minus]) {
+        if self.match_type(&[Bang, Minus]) {
             let operator = self.previous().clone();
             return self
                 .unary()
                 .map(|right| Expr::Unary(operator, Box::from(right)));
         }
-        self.primary()
+        self.call()
+    }
+
+    fn call(&mut self) -> Result<Expr, String> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.match_type(&[LeftParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, expr: Expr) -> Result<Expr, String> {
+        let mut arguments: Vec<Expr> = vec![];
+
+        if !self.check(&RightParen) {
+            loop {
+                if arguments.len() >= 255 {
+                    return Err(
+                        self.format_error(self.peek(), "Cannot have more than 255 arguments")
+                    );
+                }
+                arguments.push(self.expression()?);
+                if !self.match_type(&[Comma]) {
+                    break;
+                }
+            }
+        }
+        let paren = self.consume(&RightParen, "Expected ')' after arguments.")?;
+        Ok(Expr::Call(Box::from(expr), paren, arguments))
     }
 
     fn primary(&mut self) -> Result<Expr, String> {
-        if self.match_type(&[TokenType::False]) {
+        if self.match_type(&[False]) {
             return Ok(Expr::False);
         }
-        if self.match_type(&[TokenType::True]) {
+        if self.match_type(&[True]) {
             return Ok(Expr::True);
         }
-        if self.match_type(&[TokenType::Nil]) {
+        if self.match_type(&[Nil]) {
             return Ok(Expr::Nil);
         }
 
-        if self.match_type(&[TokenType::Number(0.0), TokenType::String(String::from(""))]) {
+        if self.match_type(&[Number(0.0), TokenType::String(String::from(""))]) {
             return match &self.previous().token_type {
-                TokenType::Number(num) => Ok(Expr::Number(*num)),
+                Number(num) => Ok(Expr::Number(*num)),
                 TokenType::String(string) => Ok(Expr::String(string.clone())),
                 _ => panic!(),
             };
         }
 
-        if self.match_type(&[TokenType::LeftParen]) {
+        if self.match_type(&[LeftParen]) {
             let expr = self.expression()?;
-            self.consume(&TokenType::RightParen, "Expected ')' after expression.")?;
+            self.consume(&RightParen, "Expected ')' after expression.")?;
             return Ok(Expr::Grouping(Box::from(expr)));
         }
 
-        if self.match_type(&[TokenType::Identifier("".to_string())]) {
+        if self.match_type(&[Identifier("".to_string())]) {
             return Ok(Expr::Variable(self.previous().clone()));
         }
 
@@ -182,7 +210,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_end(&self) -> bool {
-        discriminant(&self.peek().token_type) == discriminant(&TokenType::EOF)
+        discriminant(&self.peek().token_type) == discriminant(&EOF)
     }
 
     fn peek(&self) -> &Token {
@@ -201,7 +229,7 @@ impl<'a> Parser<'a> {
     }
 
     fn format_error(&self, token: &Token, message: &str) -> String {
-        if let TokenType::EOF = &token.token_type {
+        if let EOF = &token.token_type {
             format!("Unexpected EOF at line {}. {} ", token.line, message)
         } else {
             format!("{:?} at line {}. {}", token.token_type, token.line, message)
@@ -212,55 +240,49 @@ impl<'a> Parser<'a> {
 // statements
 impl<'a> Parser<'a> {
     fn declaration(&mut self) -> Result<Stmt, String> {
-        if self.match_type(&[TokenType::Var]) {
+        if self.match_type(&[Var]) {
             return self.var_declaration();
         }
         self.statement()
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, String> {
-        let name = self.consume(
-            &TokenType::Identifier("".to_string()),
-            "Expected variable name",
-        )?;
-        let initializer = if self.match_type(&[TokenType::Equal]) {
+        let name = self.consume(&Identifier("".to_string()), "Expected variable name")?;
+        let initializer = if self.match_type(&[Equal]) {
             Some(self.expression()?)
         } else {
             Option::None
         };
-        self.consume(
-            &TokenType::Semicolon,
-            "Expected ';' after variable declaration",
-        )?;
+        self.consume(&Semicolon, "Expected ';' after variable declaration")?;
         Ok(Stmt::Var(name, initializer))
     }
 
     fn statement(&mut self) -> Result<Stmt, String> {
-        if self.match_type(&[TokenType::If]) {
+        if self.match_type(&[If]) {
             return self.if_statement();
         }
-        if self.match_type(&[TokenType::Print]) {
+        if self.match_type(&[Print]) {
             return self.print_statement();
         }
-        if self.match_type(&[TokenType::LeftBrace]) {
+        if self.match_type(&[LeftBrace]) {
             return self.block().map(Stmt::Block);
         }
-        if self.match_type(&[TokenType::While]) {
+        if self.match_type(&[While]) {
             return self.while_statement();
         }
-        if self.match_type(&[TokenType::For]) {
+        if self.match_type(&[For]) {
             return self.for_statement();
         }
         self.expression_statement()
     }
 
     fn if_statement(&mut self) -> Result<Stmt, String> {
-        self.consume(&TokenType::LeftParen, "Expected '(' after 'if'.")?;
+        self.consume(&LeftParen, "Expected '(' after 'if'.")?;
         let condition = self.expression()?;
-        self.consume(&TokenType::RightParen, "Expected ')' after if condition.")?;
+        self.consume(&RightParen, "Expected ')' after if condition.")?;
 
         let then_branch = Box::from(self.statement()?);
-        let else_branch = if self.match_type(&[TokenType::Else]) {
+        let else_branch = if self.match_type(&[Else]) {
             Option::from(Box::from(self.statement()?))
         } else {
             Option::None
@@ -271,56 +293,53 @@ impl<'a> Parser<'a> {
 
     fn print_statement(&mut self) -> Result<Stmt, String> {
         let value = self.expression()?;
-        self.consume(&TokenType::Semicolon, "Expected ';' after value.")?;
+        self.consume(&Semicolon, "Expected ';' after value.")?;
         Ok(Stmt::Print(value))
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, String> {
         let mut statements: Vec<Stmt> = vec![];
-        while !self.check(&TokenType::RightBrace) {
+        while !self.check(&RightBrace) {
             statements.push(self.declaration()?);
         }
-        self.consume(&TokenType::RightBrace, "Expected '}' afted block.")?;
+        self.consume(&RightBrace, "Expected '}' afted block.")?;
         Ok(statements)
     }
 
     fn while_statement(&mut self) -> Result<Stmt, String> {
-        self.consume(&TokenType::LeftParen, "Expected '(' after 'while'.")?;
+        self.consume(&LeftParen, "Expected '(' after 'while'.")?;
         let condition = self.expression()?;
-        self.consume(
-            &TokenType::RightParen,
-            "Expected ')' after while condition.",
-        )?;
+        self.consume(&RightParen, "Expected ')' after while condition.")?;
 
         let body = Box::from(self.statement()?);
         Ok(Stmt::While(condition, body))
     }
 
     fn for_statement(&mut self) -> Result<Stmt, String> {
-        self.consume(&TokenType::LeftParen, "Expected '(' after 'for'.")?;
+        self.consume(&LeftParen, "Expected '(' after 'for'.")?;
 
         let mut statements: Vec<Stmt> = vec![];
-        if !self.match_type(&[TokenType::Semicolon]) {
-            if self.match_type(&[TokenType::Var]) {
+        if !self.match_type(&[Semicolon]) {
+            if self.match_type(&[Var]) {
                 statements.push(self.var_declaration()?);
             } else {
                 statements.push(self.expression_statement()?);
             }
         }
 
-        let condition = if self.check(&TokenType::Semicolon) {
+        let condition = if self.check(&Semicolon) {
             Expr::True
         } else {
             self.expression()?
         };
-        self.consume(&TokenType::Semicolon, "Expected ';' after loop condition.")?;
+        self.consume(&Semicolon, "Expected ';' after loop condition.")?;
 
-        let increment = if self.check(&TokenType::RightParen) {
+        let increment = if self.check(&RightParen) {
             Option::None
         } else {
             Option::from(Stmt::Expr(self.expression()?))
         };
-        self.consume(&TokenType::RightParen, "Expected ')' after 'for'.")?;
+        self.consume(&RightParen, "Expected ')' after 'for'.")?;
 
         let mut body = self.statement()?;
         if let Some(increment) = increment {
@@ -332,7 +351,7 @@ impl<'a> Parser<'a> {
     }
     fn expression_statement(&mut self) -> Result<Stmt, String> {
         let expression = self.expression()?;
-        self.consume(&TokenType::Semicolon, "Expected ';' after expression.")?;
+        self.consume(&Semicolon, "Expected ';' after expression.")?;
         Ok(Stmt::Expr(expression))
     }
 }

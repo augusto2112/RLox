@@ -13,4 +13,5 @@ pub enum Expr {
     Variable(Token),
     Assignment(Token, Box<Expr>),
     Logical(Box<Expr>, Token, Box<Expr>),
+    Call(Box<Expr>, Token, Vec<Expr>),
 }
