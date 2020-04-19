@@ -3,26 +3,47 @@ use crate::expression::Expr;
 use crate::statement::Stmt;
 use crate::token::Token;
 use crate::token::TokenType;
-use crate::value::LoxValue;
+use crate::value::{Callable, Return};
+use crate::value::{LoxError, LoxValue};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::UNIX_EPOCH;
 
 pub struct Interpreter {
-    enviroment: Environment,
+    pub global: Rc<RefCell<Environment>>,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
+        let global = Environment::new();
+        let func = |_: &mut Interpreter, _: &[LoxValue]| -> Result<LoxValue, LoxError> {
+            println!(
+                "{:#?}",
+                std::time::SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("error")
+            );
+            Ok(LoxValue::Nil)
+        };
+        let callable = &LoxValue::Callable(Callable::Native { arity: 0, func });
+        global.borrow_mut().define("clock", callable);
+
+        let environment = Rc::clone(&global);
         Interpreter {
-            enviroment: Environment::new(),
+            global,
+            environment,
         }
     }
-    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
+
+    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), LoxError> {
         for statement in statements {
             self.interpret_statement(statement)?;
         }
         Ok(())
     }
 
-    pub fn interpret_statement(&mut self, statement: &Stmt) -> Result<(), String> {
+    pub fn interpret_statement(&mut self, statement: &Stmt) -> Result<(), LoxError> {
         match statement {
             Stmt::Print(expression) => {
                 let value = self.interpret_expression(expression)?;
@@ -39,13 +60,16 @@ impl Interpreter {
             ) => {
                 if let Some(expression) = expression {
                     let value = self.interpret_expression(expression)?;
-                    self.enviroment.define(name, &value);
+                    self.environment.borrow_mut().define(name, &value);
                 } else {
-                    self.enviroment.define(name, &LoxValue::Nil);
+                    self.environment.borrow_mut().define(name, &LoxValue::Nil);
                 }
                 Ok(())
             }
-            Stmt::Block(statements) => self.execute_block(&statements),
+            Stmt::Block(statements) => {
+                let new = Environment::new_enclosed(Rc::clone(&self.environment));
+                self.execute_block(&statements, new)
+            }
             Stmt::If(condition, then_block, else_block) => {
                 if self.interpret_expression(condition)?.is_truthy() {
                     self.interpret_statement(then_block)?;
@@ -60,11 +84,32 @@ impl Interpreter {
                 }
                 Ok(())
             }
+            Stmt::Function(func_stmt) => {
+                if let TokenType::Identifier(name) = &func_stmt.name.token_type {
+                    let func = LoxValue::Callable(Callable::Function {
+                        arity: func_stmt.params.len(),
+                        func_stmt: func_stmt.clone(),
+                        environment: Rc::clone(&self.environment),
+                    });
+                    self.environment.borrow_mut().define(name, &func);
+                    Ok(())
+                } else {
+                    panic!("Compiler bug. Unexpected token type: {:?}", &func_stmt.name);
+                }
+            }
+            Stmt::Ret(expr) => {
+                let mut value: Option<LoxValue> = None;
+                if let Some(expr) = expr {
+                    value = Some(self.interpret_expression(expr)?);
+                }
+                // oh no so ugly!!
+                Err(LoxError::Return(Return { value }))
+            }
             statement => panic!("Interpreter bug. Unexpected statement: {:?}", statement),
         }
     }
 
-    pub fn interpret_expression(&mut self, expression: &Expr) -> Result<LoxValue, String> {
+    pub fn interpret_expression(&mut self, expression: &Expr) -> Result<LoxValue, LoxError> {
         match expression {
             Expr::Number(number) => Ok(LoxValue::Number(*number)),
             Expr::String(string) => Ok(LoxValue::String(string.to_string())),
@@ -90,12 +135,14 @@ impl Interpreter {
                 expression,
             ) => match self.interpret_expression(expression)? {
                 LoxValue::Number(number) => Ok(LoxValue::Number(-number)),
-                _ => Err("Error: operand must be a number.".to_string()),
+                _ => Err(LoxError::Standard(
+                    "Error: operand must be a number.".to_string(),
+                )),
             },
             Expr::Binary(left, token, right) => {
                 self.interpret_binary_expression(left, token, right)
             }
-            Expr::Variable(token) => self.enviroment.get(&token),
+            Expr::Variable(token) => self.environment.borrow().get(&token),
             Expr::Assignment(
                 Token {
                     token_type: TokenType::Identifier(name),
@@ -104,7 +151,7 @@ impl Interpreter {
                 expression,
             ) => {
                 let value = self.interpret_expression(expression)?;
-                self.enviroment.assign(name, &value)?;
+                self.environment.borrow_mut().assign(name, &value)?;
                 Ok(value)
             }
             Expr::Logical(
@@ -137,6 +184,29 @@ impl Interpreter {
                     Ok(left)
                 }
             }
+            Expr::Call(callee, _, arguments) => {
+                let callee = self.interpret_expression(callee)?;
+                let arguments: Result<Vec<LoxValue>, LoxError> = arguments
+                    .iter()
+                    .map(|argument| self.interpret_expression(argument))
+                    .collect();
+                let arguments = arguments?;
+                if let LoxValue::Callable(function) = callee {
+                    if function.arity() == arguments.len() {
+                        function.call(self, &arguments)
+                    } else {
+                        Err(LoxError::Standard(format!(
+                            "Expected {} arguments but got {} .",
+                            function.arity(),
+                            arguments.len()
+                        )))
+                    }
+                } else {
+                    Err(LoxError::Standard(
+                        "Can only call functions and classes".to_string(),
+                    ))
+                }
+            }
 
             expression => panic!("Interpreter bug: unexpected expression: {:?}", expression),
         }
@@ -144,10 +214,10 @@ impl Interpreter {
 
     fn interpret_binary_expression(
         &mut self,
-        left: &Box<Expr>,
+        left: &Expr,
         token: &Token,
-        right: &Box<Expr>,
-    ) -> Result<LoxValue, String> {
+        right: &Expr,
+    ) -> Result<LoxValue, LoxError> {
         let Token { token_type, line } = token;
         match (self.interpret_expression(left)?, token_type, self.interpret_expression(right)?) {
             (LoxValue::Number(left), TokenType::Plus, LoxValue::Number(right)) => {
@@ -185,28 +255,32 @@ impl Interpreter {
             | (_, TokenType::Less, _)
             | (_, TokenType::LessEqual, _)
             | (_, TokenType::Greater, _)
-            | (_, TokenType::GreaterEqual, _) => Err(format!(
+            | (_, TokenType::GreaterEqual, _) => Err(LoxError::Standard(format!(
                 "Error in line: {}, operands must both be numbers.",
                 line
-            )),
-            (_, TokenType::Plus, _) => Err(format!(
+            ))),
+            (_, TokenType::Plus, _) => Err(LoxError::Standard(format!(
                 "Error in line: {}, operands must both be numbers or strings.",
                 line
-            )),
+            ))),
             (left, op, right) => panic!("Interpreter bug: Unexpected match of left expression: {:?}, operation: {:?}, right expression: {:?}", left, op, right),
         }
     }
 
-    fn execute_block(&mut self, statements: &[Stmt]) -> Result<(), String> {
-        self.enviroment.add_sub_environment();
+    pub fn execute_block(
+        &mut self,
+        statements: &[Stmt],
+        new_environment: Rc<RefCell<Environment>>,
+    ) -> Result<(), LoxError> {
+        let mut old = std::mem::replace(&mut self.environment, new_environment);
         for statement in statements {
             let result = self.interpret_statement(statement);
             if result.is_err() {
-                self.enviroment.remove_sub_environment();
+                std::mem::swap(&mut self.environment, &mut old);
                 return result;
             }
         }
-        self.enviroment.remove_sub_environment();
+        std::mem::swap(&mut self.environment, &mut old);
         Ok(())
     }
 }

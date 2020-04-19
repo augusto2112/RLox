@@ -1,5 +1,6 @@
 use crate::token::Token;
 use crate::token::TokenType;
+use crate::value::LoxError;
 
 pub struct Scanner {
     source: Vec<char>,
@@ -7,11 +8,11 @@ pub struct Scanner {
     start: usize,
     current: usize,
     line: usize,
-    errors: Vec<String>,
+    errors: Vec<LoxError>,
 }
 
 impl Scanner {
-    pub fn scan(source: &str) -> Result<Vec<Token>, Vec<String>> {
+    pub fn scan(source: &str) -> Result<Vec<Token>, Vec<LoxError>> {
         let mut scanner = Scanner::new(source);
         scanner.scan_tokens();
         if scanner.errors.is_empty() {
@@ -91,8 +92,10 @@ impl Scanner {
                 } else if c.is_ascii_alphabetic() || c == '_' {
                     self.identifier()
                 } else {
-                    self.errors
-                        .push(format!("unexpected character at line {}", self.line));
+                    self.errors.push(LoxError::Standard(format!(
+                        "unexpected character at line {}",
+                        self.line
+                    )));
                 }
             }
         }
@@ -149,8 +152,10 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            self.errors
-                .push(format!("Error: unterminated string at line {}", self.line));
+            self.errors.push(LoxError::Standard(format!(
+                "Error: unterminated string at line {}",
+                self.line
+            )));
             return;
         }
 
